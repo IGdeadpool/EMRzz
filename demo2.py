@@ -8,14 +8,14 @@ file_path = 'test2.raw'
 data = np.fromfile(file_path, dtype=np.int16) #1-D array
 print(data.shape)
 SAMPLE_RATE = 10000000
-length = len(data)//200
-for i in range(0, len(data)-200*length):
-    data=np.delete(data, -1)
+example_num = 100
+length = len(data)//(example_num*2)
+data = np.delete(data,slice(length*example_num*2-1, -1))
 complex_num = data[0::2] + 1j * data[1::2]
 print(complex_num.shape)
-data1 = complex_num.reshape(100,length)
-for i in range(0,100):
-    fft_fft_y = fft(data1[i])
+complex_num = complex_num.reshape(example_num, length)
+for i in range(0,example_num):
+    fft_fft_y = fft(complex_num[i])
     print(fft_fft_y.shape)
     fft_y = np.abs(fft_fft_y)
     fft_y/=max(fft_y)
