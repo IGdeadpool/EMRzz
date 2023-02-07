@@ -39,10 +39,10 @@ class Mydataset(Dataset):
     def __getitem__(self, index):
         path, label = self.img[index]
 
-        img = self.loader(path)  # 读取出来维度为3， 22， 14 ？？ 无法正常显示图片
+        img = self.loader(path)
         img = np.array(img, dtype=np.float32)
         if self.transform:
-            img = self.transform(img)  # Totensor维度改变 torch.Size([3, 22, 14])
+            img = self.transform(img)
 
         return img, label
 

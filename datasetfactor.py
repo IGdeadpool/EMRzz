@@ -5,26 +5,19 @@ import os
 from PIL import Image
 
 def make_name(file_name_from, img_file_txt, label_array, length):
-    """
-    生成图片、标签文件对应的文件
-    :return:
-    """
     photo_name_chr = os.listdir('./' + str(file_name_from))
     photo_name_chr.sort(key = lambda x: int(x))
     # print(photo_name_chr)
     with open(img_file_txt, 'w') as fp:
         for i in range(0,length):
-            root_name = 'C:/Users/User/Documents/EMRzz/' + str(file_name_from) + '/' + str(photo_name_chr[i])
-            fp.write(root_name)
-            fp.write('  ')
-            fp.write(label_array[i])
-            fp.write('\n')
+            for n in range(100):
+                root_name = 'C:/Users/User/Documents/EMRzz/' + str(file_name_from) + '/' + str(photo_name_chr[100*i+n+1])
+                fp.write(root_name)
+                fp.write('  ')
+                fp.write(label_array[i])
+                fp.write('\n')
 
 def show_photo():
-    """
-    查看图片路径是否正确
-    :return:
-    """
     with open('name.txt', 'r') as fp2:
         a = fp2.readline().split()
         # print(a[0])
@@ -41,6 +34,7 @@ def tentotwo(num):
     while len(s)>0:
         binstring = binstring + str(s.pop())
     return (binstring)
+
 count = 100
 aes_key = np.loadtxt("100_aes.txt", dtype='str', delimiter=' ')
 print(aes_key)
