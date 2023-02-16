@@ -78,7 +78,6 @@ print(net)
 loss_func = nn.CrossEntropyLoss()
 optim = torch.optim.Adam(net.parameters(), lr=0.01)
 
-# put all hyper params into a OrderedDict, easily expandable
 from collections import OrderedDict
 
 params = OrderedDict(
@@ -88,13 +87,10 @@ params = OrderedDict(
 )
 epochs = 3
 
-# import modules to build RunBuilder and RunManager helper classes
 from collections import namedtuple
 from itertools import product
 
 
-# Read in the hyper-parameters and return a Run namedtuple containing all the
-# combinations of hyper-parameters
 class RunBuilder():
     @staticmethod
     def get_runs(params):
@@ -106,31 +102,24 @@ class RunBuilder():
 
         return runs
 
-
-# Helper class, help track loss, accuracy, epoch time, run time,
-# hyper-parameters etc. Also record to TensorBoard and write into csv, json
 class RunManager():
     def __init__(self):
 
-        # tracking every epoch count, loss, accuracy, time
         self.epoch_count = 0
         self.epoch_loss = 0
         self.epoch_num_correct = 0
         self.epoch_start_time = None
 
-        # tracking every run count, run data, hyper-params used, time
         self.run_params = None
         self.run_count = 0
         self.run_data = []
         self.run_start_time = None
 
-        # record model, loader and TensorBoard
         self.network = None
         self.train_loader = None
         self.tb = None
 
-    # record the count, hyper-param, model, loader of each run
-    # record sample images and network graph to TensorBoard
+
     def begin_run(self, run, net, train_loader):
 
         self.run_start_time = time.time()
@@ -148,7 +137,6 @@ class RunManager():
         self.tb.add_image('images', grid)
         self.tb.add_graph(self.network, images)
 
-    # when run ends, close TensorBoard, zero epoch count
     def end_run(self):
         self.tb.close()
         self.epoch_count = 0
