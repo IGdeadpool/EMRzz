@@ -1,271 +1,247 @@
 import torch.nn.functional as F
 import torch
-import torch
 import torch.nn as nn
-from torch.autograd import Variable
-import torchvision.models as models
-from torchvision import transforms, utils
-from torch.utils.data import Dataset, DataLoader
-from PIL import Image
 import numpy as np
-import torch.optim as optim
 import os
-from torch.utils.tensorboard import SummaryWriter
-import time
-import pandas as pd
-import json
-from IPython.display import clear_output, display
+import h5py
+import sys
+import torch.utils.data as Data
+from torch.optim.lr_scheduler import StepLR
+from torch.autograd import Variable
 root =os.getcwd() + '/'
-def default_loader(path):
-    return Image.open(path).convert('RGB')
-class Mydataset(Dataset):
-    def __init__(self, txt_name, transform=None, target_tranform=None, loader=default_loader, identify=None):
-        super(Mydataset, self).__init__()
-        imgs =[]
-        fh = open(txt_name, 'r')
-        for line in fh:
-            line = line.strip('\n')
-            line = line.rstrip('\n')
-            words = line.split()
-            imgs.append((words[0], int(words[1],2)))
-        self.img = imgs
-        self.transform = transform
-        self.target_transform = target_tranform
-        self.loader = loader
 
-    def __len__(self):
-        return len(self.img)
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+def check_file_exist(file_path):
+    if os.path.exists(file_path) == False:
+        print("Error: provided file path does not exist")
+        sys.exit(-1)
+    return
+def load_dataset(dataset, batch_size):
+    check_file_exist(dataset)
+    try:
+        input_file = h5py.File(dataset, "r")
+    except:
+        print("Error: can't open HDF5 file for reading")
+        sys.exit(-1)
 
-    def __getitem__(self, index):
-        path, label = self.img[index]
+    # batchnorm2d = nn.BatchNorm2d(1)
+    x_train = np.array(input_file['train_set/trace'], dtype = np.int16)
+    y_train = np.array(input_file['train_set/labels'])
 
-        img = self.loader(path)
-        img = np.array(img, dtype=np.float32)
-        if self.transform:
-            img = self.transform(img)
+    x_valid = np.array(input_file['valid_set/trace'], dtype=np.int16)
+    y_valid = np.array(input_file['valid_set/labels'])
+    print(x_train.shape, y_train.shape)
+    x_train = x_train.astype(np.float32,order='C', casting= 'unsafe')
+    x_train = torch.from_numpy(x_train)
+    x_train = x_train.unsqueeze(1)
+    # print(x_train)
+    # x_train = batchnorm2d(x_train)
+    y_train = y_train.astype(np.float32, order='C', casting='unsafe')
+    y_train = torch.from_numpy(y_train)
 
-        return img, label
+    x_valid= x_valid.astype(np.float32, order='C', casting='unsafe')
+    x_valid = torch.from_numpy(x_valid)
+    x_valid = x_valid.unsqueeze(1)
+    # x_valid =batchnorm2d(x_valid)
+    y_valid = y_valid.astype(np.float32, order='C', casting='unsafe')
+    y_valid = torch.from_numpy(y_valid)
 
-train_data = Mydataset(root+'train_set.txt', transforms = transforms.ToTensor())
-test_data = Mydataset(root+'test_set.txt', transforms = transforms.ToTensor())
+    # normalize
+    x_train /= 255
+    x_valid /= 255
 
-train_loader = DataLoader(train_data, batch_size=10, shuffle=True)
-test_loader = DataLoader(test_data, batch_size=10, shuffle=True)
 
+
+    train_dataset = Data.TensorDataset(x_train, y_train)
+    valid_dataset = Data.TensorDataset(x_valid, y_valid)
+
+
+    """    loader = Data.DataLoader(train_dataset, batch_size=len(train_dataset), num_workers=1)
+    data = next(iter(loader))
+    train_mean = data[0].mean()
+    train_std = data[0].std()
+    x_train = (x_train-train_mean)/train_std
+    train_dataset = Data.TensorDataset(x_train, y_train)"""
+
+    del y_train
+    del x_train
+    del y_valid
+    del x_valid
+
+    train_loader = Data.DataLoader(dataset=train_dataset, batch_size=batch_size, shuffle=False)
+    valid_loader = Data.DataLoader(dataset=valid_dataset, batch_size=batch_size, shuffle=False)
+
+
+    return train_loader, valid_loader
+
+def modelsize(model, input, type_size=4):
+    para = sum([np.prod(list(p.size())) for p in model.parameters()])
+    print('Model {} : params: {:4f}M'.format(model._get_name(), para * type_size / 1000 / 1000))
+
+    input_ = input.clone()
+    input_.requires_grad_(requires_grad=False)
+
+    mods = list(model.modules())
+    out_sizes = []
+
+    for i in range(1, len(mods)):
+        m = mods[i]
+        if isinstance(m, nn.ReLU):
+            if m.inplace:
+                continue
+        out = m(input_)
+        out_sizes.append(np.array(out.size()))
+        input_ = out
+
+    total_nums = 0
+    for i in range(len(out_sizes)):
+        s = out_sizes[i]
+        nums = np.prod(np.array(s))
+        total_nums += nums
+
+    print('Model {} : intermedite variables: {:3f} M (without backward)'
+          .format(model._get_name(), total_nums * type_size / 1000 / 1000))
+    print('Model {} : intermedite variables: {:3f} M (with backward)'
+          .format(model._get_name(), total_nums * type_size * 2 / 1000 / 1000))
 
 class KeyRecovery(nn.Module):
     def __init__(self):
         super(KeyRecovery, self).__init__()
-        self.conv1 = nn.Conv2d(3, 20, 5)
-        self.conv2 = nn.Conv2d(20, 40, 5)
-        self.conv3 = nn.Conv2d(40, 80, 5)
-        self.fc1 = nn.Linear(80 * 2 * 2, 100)
-        self.fc2 = nn.Linear(100, 10)
-
-        def forward(self, x):
-            x = F.relu(self.conv1(x))
-            x = F.relu(self.conv2(x))
-            x = F.relu(self.conv3(x))
-            x = x.view(-1, 320)
-            x = F.relu(self.fc1(x))
-            x = F.relu(self.fc2(x))
-            return F.log_softmax(x)
-
-
-net = KeyRecovery()
-print(net)
-
-loss_func = nn.CrossEntropyLoss()
-optim = torch.optim.Adam(net.parameters(), lr=0.01)
-
-from collections import OrderedDict
-
-params = OrderedDict(
-    lr=[.01, .001],
-    batch_size=[100, 1000],
-    shuffle=[True, False]
-)
-epochs = 3
-
-from collections import namedtuple
-from itertools import product
+        self.bn1 = nn.BatchNorm1d(8192)
+        self.bn2 = nn.BatchNorm1d(4096)
+        self.conv1 = nn.Sequential(
+            nn.Conv2d(1, 4, kernel_size =5, stride=2, padding =2),
+            nn.BatchNorm2d(4, affine= True),
+            nn.LeakyReLU()
+        )
+        self.conv2 = nn.Sequential(
+            nn.Conv2d(4, 16, 5, 2, 2),
+            nn.BatchNorm2d(16, affine=True),
+            nn.LeakyReLU()
+        )
+        self.conv3 = nn.Sequential(
+            nn.Conv2d(16, 4, 5, 2, 2),
+            nn.BatchNorm2d(4, affine=True),
+            nn.LeakyReLU()
+        )
+        self.fc1 = nn.Linear(15876,8192)
+        self.fc2 = nn.Linear(8192, 4096)
+        self.drop = nn.Dropout(p=0.2)
 
 
-class RunBuilder():
-    @staticmethod
-    def get_runs(params):
-        Run = namedtuple('Run', params.keys())
+    def forward(self, x):
+        x = self.conv1(x)
+        x = self.conv2(x)
+        x = self.conv3(x)
+        x = x.view(x.size(0), -1)
+        x = F.leaky_relu(self.fc1(x))
+        x = self.bn1(x)
+        x = self.fc2(x)
+        x = self.bn2(x)
+        x = torch.reshape(x, (-1,16,256))
+        x = self.drop(x)
+        x = F.log_softmax(x, dim=2)
+        # x = F.sigmoid(x)
+        return x
 
-        runs = []
-        for v in product(*params.values()):
-            runs.append(Run(*v))
+def to_categorical(y, num_classes):
+    y = y.numpy().astype(int)
+    y = np.eye(num_classes, dtype='uint16')[y]
+    y= y.astype(np.float32, order='C', casting='unsafe')
+    y = torch.from_numpy(y)
 
-        return runs
+    return y
 
-class RunManager():
-    def __init__(self):
+def partial_correct_accuracy(y_true ,y_pred):
+    num_correct =0
+    num_wrong =0
 
-        self.epoch_count = 0
-        self.epoch_loss = 0
-        self.epoch_num_correct = 0
-        self.epoch_start_time = None
+    for i in range(len(y_true)):
+        for n in range(16):
+            target = np.argmax(y_true[i][n])
+            index = np.argmax(y_pred[i][n])
+            if target == index:
+                num_correct+=1
+            else:
+                num_wrong+=1
 
-        self.run_params = None
-        self.run_count = 0
-        self.run_data = []
-        self.run_start_time = None
-
-        self.network = None
-        self.train_loader = None
-        self.tb = None
-
-
-    def begin_run(self, run, net, train_loader):
-
-        self.run_start_time = time.time()
-
-        self.run_params = run
-        self.run_count += 1
-
-        self.network = net
-        self.train_loader = train_loader
-        self.tb = SummaryWriter(comment=f'-{run}')
-
-        images, labels = next(iter(self.train_loader))
-        grid = utils.make_grid(images)
-
-        self.tb.add_image('images', grid)
-        self.tb.add_graph(self.network, images)
-
-    def end_run(self):
-        self.tb.close()
-        self.epoch_count = 0
-
-    # zero epoch count, loss, accuracy,
-    def begin_epoch(self):
-        self.epoch_start_time = time.time()
-
-        self.epoch_count += 1
-        self.epoch_loss = 0
-        self.epoch_num_correct = 0
-
-    #
-    def end_epoch(self):
-        # calculate epoch duration and run duration(accumulate)
-        epoch_duration = time.time() - self.epoch_start_time
-        run_duration = time.time() - self.run_start_time
-
-        # record epoch loss and accuracy
-        loss = self.epoch_loss / len(self.loader.dataset)
-        accuracy = self.epoch_num_correct / len(self.loader.dataset)
-
-        # Record epoch loss and accuracy to TensorBoard
-        self.tb.add_scalar('Loss', loss, self.epoch_count)
-        self.tb.add_scalar('Accuracy', accuracy, self.epoch_count)
-
-        # Record params to TensorBoard
-        for name, param in self.network.named_parameters():
-            self.tb.add_histogram(name, param, self.epoch_count)
-            self.tb.add_histogram(f'{name}.grad', param.grad, self.epoch_count)
-
-        # Write into 'results' (OrderedDict) for all run related data
-        results = OrderedDict()
-        results["run"] = self.run_count
-        results["epoch"] = self.epoch_count
-        results["loss"] = loss
-        results["accuracy"] = accuracy
-        results["epoch duration"] = epoch_duration
-        results["run duration"] = run_duration
-
-        # Record hyper-params into 'results'
-        for k, v in self.run_params._asdict().items(): results[k] = v
-        self.run_data.append(results)
-        df = pd.DataFrame.from_dict(self.run_data, orient='columns')
-
-        # display epoch information and show progress
-        clear_output(wait=True)
-        display(df)
-
-    # accumulate loss of batch into entire epoch loss
-    def track_loss(self, loss):
-        # multiply batch size so variety of batch sizes can be compared
-        self.epoch_loss += loss.item() * self.loader.batch_size
-
-    # accumulate number of corrects of batch into entire epoch num_correct
-    def track_num_correct(self, preds, labels):
-        self.epoch_num_correct += self._get_num_correct(preds, labels)
-
-    @torch.no_grad()
-    def _get_num_correct(self, preds, labels):
-        return preds.argmax(dim=1).eq(labels).sum().item()
-
-    # save end results of all runs into csv, json for further analysis
-    def save(self, fileName):
-
-        pd.DataFrame.from_dict(
-            self.run_data,
-            orient='columns',
-        ).to_csv(f'{fileName}.csv')
-
-        with open(f'{fileName}.json', 'w', encoding='utf-8') as f:
-            json.dump(self.run_data, f, ensure_ascii=False, indent=4)
+    accuracy = num_correct/ (num_wrong+num_correct)
 
 
-# train
-m = RunManager()
 
-# get all runs from params using RunBuilder class
-for run in RunBuilder.get_runs(params):
+    return accuracy
 
-    # define the network
-    network = KeyRecovery()
+if __name__ == "__main__":
+    if len(sys.argv)!=2:
+        dataset = "AES_key_recover_train.hdf5"
+        epoches = 100
+        batch_size = 10
+        model_file = "saved_model.txt"
+    else:
 
-    # define a optimizer: optim.Adam
-    optimizer = optim.Adam(network.parameters(), lr=run.lr)
-    loss_func = nn.CrossEntropyLoss()
-    # beigin the RunManager
-    m.begin_run(run, network, train_loader)
-    for epoch in range(epochs):
+        # todo: read parameters
+        dataset = "AES_key_recover_train.hdf5"
+        epoches = 100
+        batch_size = 10
+        model_file = "saved_model.txt"
 
-        m.begin_epoch()
-        for batch in train_loader:
-            images = batch[0]
-            labels = batch[1]
+    train_loader, valid_loader = load_dataset(dataset, batch_size)
+    print("data finished")
+    net = KeyRecovery()
+    net.to(device)
 
-            # network forward for training
-            preds = network(images)
+    learning_rate = 0.1
+    optimizer = torch.optim.Adam(net.parameters(), lr=learning_rate)
+    loss_function = nn.NLLLoss()
+    scheduler = StepLR(optimizer, 10, gamma=0.5)
+    for epoch in range(epoches):
+        print("runing epoch {}".format(epoch))
+        # training
+        accuracy_train = 0.0
+        loss_train = 0.0
+        net.train()
+        for step, (x_train, y_train) in enumerate(train_loader):
 
-            # Compute loss and gradient backpropgation
-            loss = loss_func(preds, labels)
+            x_train = x_train.to(device)
+            y_train_one_hot = to_categorical(y_train, num_classes=256)
+            y_train_one_hot = y_train_one_hot.to(device)
+            # modelsize(net, x_train)
+            # y_train = y_train.squeeze()
+
+            output = net(x_train)
+            # loss = loss_function(output, y_train)
+            loss = -torch.sum(output*y_train_one_hot)/batch_size
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
+            output_arr = output.cpu().detach().numpy()
+            accuracy_train = partial_correct_accuracy(y_train_one_hot.cpu().numpy(), output_arr)
+            loss_train = loss.data.cpu().numpy()
 
-            m.track_loss(loss)
+            print('Epoch: ', epoch, '| train loss: %.4f' % loss_train,
+                    '|train accuracy: %.4f' % accuracy_train, '|learning rate: %.6f' % optimizer.param_groups[0]['lr'])
+            accuracy_train =0.0
+            loss_train = 0.0
 
-            m.track_num_correct(preds, labels)
+        net.eval()
+        for i, (x_valid, y_valid) in enumerate(valid_loader):
 
-        m.end_epoch()
-    m.end_run()
-    m.begin_run(run, network, test_loader)
-    for epoch in range(epochs):
+            x_valid = x_valid.to(device)
+            y_valid_one_hot = to_categorical(y_valid, num_classes=256)
+            y_valid_one_hot = y_valid_one_hot.to(device)
+            output = net.forward(x_valid)
 
-        m.begin_epoch()
-        for batch in test_loader:
-            images = batch[0]
-            labels = batch[1]
+            # loss = loss_function(output, y_valid)
+            # print(output, y_valid_one_hot)
+            loss = -torch.sum(output * y_valid_one_hot) / batch_size
+            loss_valid = loss.data.cpu().numpy()
 
-            # network forward for training
-            preds = network(images)
+            output_arr = output.cpu().detach().numpy()
+            accuracy_valid = partial_correct_accuracy(y_valid_one_hot.cpu().numpy(), output_arr)
+            print('Epoch: ', epoch, '| validation loss: %.4f' % loss_valid ,
+                  '|validatiton accuracy: %.4f' % accuracy_valid)
 
-            # Compute loss and gradient backpropgation
-            loss = loss_func(preds, labels)
-            loss.backward()
-            m.track_loss(loss)
-            m.track_num_correct(preds, labels)
+        scheduler.step()
+        torch.cuda.empty_cache()
 
-        m.end_epoch()
-    m.end_run()
-
-# when all runs are done, save results to files
-m.save('results')
+    torch.save(net.state_dict(), model_file)
