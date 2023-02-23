@@ -28,10 +28,11 @@ def get_avarage(array1, array2, num):
         print("Error3: lengths of arrays are different.")
         sys.exit(-1)
     else:
+        array3 = (array1[0:1] * num + array2[0:1]) / (num+1)
         for n in range(len(array1)):
             array1[n] = (array1[n] * num + array2[n]) / (num + 1)
 
-        return array1
+        return array3
 
 #convert .raw to complex
 def convert_raw_to_dataset(traces_file_path, train_group, valid_group,  key_num, traces_per_key, frequency, length_signal, validaion_rate):
@@ -57,7 +58,7 @@ def convert_raw_to_dataset(traces_file_path, train_group, valid_group,  key_num,
 
             img = avarage[0::2] + 1j * avarage[1::2]
             data = fft_fuc(img, frequency, length_signal)
-            print(data.shape)
+            print("images: ", i)
             train_traces[i]= data
         # collect data of validation set
         ###
@@ -75,7 +76,7 @@ def convert_raw_to_dataset(traces_file_path, train_group, valid_group,  key_num,
 
             img = avarage[0::2] + 1j * avarage[1::2]
             data = fft_fuc(img, frequency, length_signal)
-            print(data.shape)
+            print("images: ", i)
             validation_traces[i-int(key_num*(1.0-validaion_rate))]= data
     file.close()
 
@@ -126,21 +127,21 @@ def labelize(plaintext, key):
 
 if __name__ == "__main__":
     if len(sys.argv)!=2:
-        file_path = 'train.raw'
+        file_path = 'a_train_1000.raw'
         SAMPLE_RATE = 10000000
         frequency = 80000000
-        key_num = 100
+        key_num = 1000
         traces_per_key = 100
-        record_time = 12048
-        key_file_path = "train_aes_key.txt"
+        record_time = 120678
+        key_file_path = "aes_key_1000.txt"
         validation_rate = 0.3
     else:
-        file_path = 'train.raw'
+        file_path = 'a_train_1000.raw'
         SAMPLE_RATE = 10000000
         frequency = 80000000
-        key_num = 100
+        key_num = 1000
         traces_per_key = 100
-        record_time = 12048
+        record_time = 120678
         validation_rate = 0.3
         #todo : read_parameter
 

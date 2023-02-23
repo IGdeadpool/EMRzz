@@ -215,13 +215,15 @@ if __name__ == "__main__":
             loss.backward()
             optimizer.step()
             output_arr = output.cpu().detach().numpy()
-            accuracy_train = partial_correct_accuracy(y_train_one_hot.cpu().numpy(), output_arr)
-            loss_train = loss.data.cpu().numpy()
+            accuracy_train += partial_correct_accuracy(y_train_one_hot.cpu().numpy(), output_arr)
+            loss_train += loss.data.cpu().numpy()
 
-            print('Epoch: ', epoch, '| train loss: %.4f' % loss_train,
-                    '|train accuracy: %.4f' % accuracy_train, '|learning rate: %.6f' % optimizer.param_groups[0]['lr'])
-            accuracy_train =0.0
-            loss_train = 0.0
+            if step % 10 == 9:
+                print('Epoch: ', epoch, 'Batch: ', step, '| train loss: %.4f' % loss_train/10,
+                      '|train accuracy: %.4f' % accuracy_train/10,
+                      '|learning rate: %.6f' % optimizer.param_groups[0]['lr'])
+                accuracy_train = 0.0
+                loss_train = 0.0
 
         net.eval()
         for i, (x_valid, y_valid) in enumerate(valid_loader):
