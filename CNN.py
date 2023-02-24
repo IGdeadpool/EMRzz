@@ -173,14 +173,14 @@ def partial_correct_accuracy(y_true ,y_pred):
 
 if __name__ == "__main__":
     if len(sys.argv)!=2:
-        dataset = "AES_key_recover_train.hdf5"
+        dataset = "AES_key_recover_train_1000.hdf5"
         epoches = 100
         batch_size = 10
         model_file = "saved_model.txt"
     else:
 
         # todo: read parameters
-        dataset = "AES_key_recover_train.hdf5"
+        dataset = "AES_key_recover_train_1000.hdf5"
         epoches = 100
         batch_size = 10
         model_file = "saved_model.txt"
@@ -219,13 +219,15 @@ if __name__ == "__main__":
             loss_train += loss.data.cpu().numpy()
 
             if step % 10 == 9:
-                print('Epoch: ', epoch, 'Batch: ', step, '| train loss: %.4f' % loss_train/10,
-                      '|train accuracy: %.4f' % accuracy_train/10,
+                print('Epoch: ', epoch, 'Batch: ', step+1, '| train loss: %.4f' % (loss_train/10),
+                      '|train accuracy: %.4f' % (accuracy_train/10),
                       '|learning rate: %.6f' % optimizer.param_groups[0]['lr'])
                 accuracy_train = 0.0
                 loss_train = 0.0
 
-        net.eval()
+        # net.eval()
+        loss_valid = 0.0
+        accuracy_valid = 0.0
         for i, (x_valid, y_valid) in enumerate(valid_loader):
 
             x_valid = x_valid.to(device)
@@ -236,12 +238,12 @@ if __name__ == "__main__":
             # loss = loss_function(output, y_valid)
             # print(output, y_valid_one_hot)
             loss = -torch.sum(output * y_valid_one_hot) / batch_size
-            loss_valid = loss.data.cpu().numpy()
+            loss_valid += loss.data.cpu().numpy()
 
             output_arr = output.cpu().detach().numpy()
-            accuracy_valid = partial_correct_accuracy(y_valid_one_hot.cpu().numpy(), output_arr)
-            print('Epoch: ', epoch, '| validation loss: %.4f' % loss_valid ,
-                  '|validatiton accuracy: %.4f' % accuracy_valid)
+            accuracy_valid += partial_correct_accuracy(y_valid_one_hot.cpu().numpy(), output_arr)
+        print('Epoch: ', epoch, '| validation loss: %.4f' % (loss_valid/30) ,
+                 '|validatiton accuracy: %.4f' % (accuracy_valid/30))
 
         scheduler.step()
         torch.cuda.empty_cache()
