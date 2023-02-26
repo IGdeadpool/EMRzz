@@ -8,6 +8,26 @@ import io
 import cv2
 import h5py
 import keyboard
+
+
+AES_Sbox = np.array([
+			0x63, 0x7C, 0x77, 0x7B, 0xF2, 0x6B, 0x6F, 0xC5, 0x30, 0x01, 0x67, 0x2B, 0xFE, 0xD7, 0xAB, 0x76,
+			0xCA, 0x82, 0xC9, 0x7D, 0xFA, 0x59, 0x47, 0xF0, 0xAD, 0xD4, 0xA2, 0xAF, 0x9C, 0xA4, 0x72, 0xC0,
+			0xB7, 0xFD, 0x93, 0x26, 0x36, 0x3F, 0xF7, 0xCC, 0x34, 0xA5, 0xE5, 0xF1, 0x71, 0xD8, 0x31, 0x15,
+			0x04, 0xC7, 0x23, 0xC3, 0x18, 0x96, 0x05, 0x9A, 0x07, 0x12, 0x80, 0xE2, 0xEB, 0x27, 0xB2, 0x75,
+			0x09, 0x83, 0x2C, 0x1A, 0x1B, 0x6E, 0x5A, 0xA0, 0x52, 0x3B, 0xD6, 0xB3, 0x29, 0xE3, 0x2F, 0x84,
+			0x53, 0xD1, 0x00, 0xED, 0x20, 0xFC, 0xB1, 0x5B, 0x6A, 0xCB, 0xBE, 0x39, 0x4A, 0x4C, 0x58, 0xCF,
+			0xD0, 0xEF, 0xAA, 0xFB, 0x43, 0x4D, 0x33, 0x85, 0x45, 0xF9, 0x02, 0x7F, 0x50, 0x3C, 0x9F, 0xA8,
+			0x51, 0xA3, 0x40, 0x8F, 0x92, 0x9D, 0x38, 0xF5, 0xBC, 0xB6, 0xDA, 0x21, 0x10, 0xFF, 0xF3, 0xD2,
+			0xCD, 0x0C, 0x13, 0xEC, 0x5F, 0x97, 0x44, 0x17, 0xC4, 0xA7, 0x7E, 0x3D, 0x64, 0x5D, 0x19, 0x73,
+			0x60, 0x81, 0x4F, 0xDC, 0x22, 0x2A, 0x90, 0x88, 0x46, 0xEE, 0xB8, 0x14, 0xDE, 0x5E, 0x0B, 0xDB,
+			0xE0, 0x32, 0x3A, 0x0A, 0x49, 0x06, 0x24, 0x5C, 0xC2, 0xD3, 0xAC, 0x62, 0x91, 0x95, 0xE4, 0x79,
+			0xE7, 0xC8, 0x37, 0x6D, 0x8D, 0xD5, 0x4E, 0xA9, 0x6C, 0x56, 0xF4, 0xEA, 0x65, 0x7A, 0xAE, 0x08,
+			0xBA, 0x78, 0x25, 0x2E, 0x1C, 0xA6, 0xB4, 0xC6, 0xE8, 0xDD, 0x74, 0x1F, 0x4B, 0xBD, 0x8B, 0x8A,
+			0x70, 0x3E, 0xB5, 0x66, 0x48, 0x03, 0xF6, 0x0E, 0x61, 0x35, 0x57, 0xB9, 0x86, 0xC1, 0x1D, 0x9E,
+			0xE1, 0xF8, 0x98, 0x11, 0x69, 0xD9, 0x8E, 0x94, 0x9B, 0x1E, 0x87, 0xE9, 0xCE, 0x55, 0x28, 0xDF,
+			0x8C, 0xA1, 0x89, 0x0D, 0xBF, 0xE6, 0x42, 0x68, 0x41, 0x99, 0x2D, 0x0F, 0xB0, 0x54, 0xBB, 0x16
+			])
 # function to convert recorded AES key
 def convert_plaintext_key(file_path, key_num):
     try:
@@ -23,126 +43,80 @@ def convert_plaintext_key(file_path, key_num):
         aes_key[n] = pks[2*n]
     return plaintext, aes_key
 
-def get_avarage(array1, array2, num):
-    if (len(array1)!= len(array2)):
-        print("Error3: lengths of arrays are different.")
-        sys.exit(-1)
-    else:
-        array3 = (array1[0:1] * num + array2[0:1]) / (num+1)
-        for n in range(len(array1)):
-            array1[n] = (array1[n] * num + array2[n]) / (num + 1)
-
-        return array3
-
 #convert .raw to complex
 def convert_raw_to_dataset(traces_file_path, train_group, valid_group,  key_num, traces_per_key, frequency, length_signal, validaion_rate):
-    recordLen = length_signal*2  # number of int16's per record
-    recordSize = recordLen * 2  # size of a record in bytes
-    image = np.dtype((np.int16, (500,500)))
-    train_traces = np.zeros(int(key_num*(1.0-validaion_rate)), dtype=image)
-    validation_traces = np.zeros(int(key_num*validaion_rate), dtype=image)
+
+    train_traces = np.zeros((int(key_num*(1.0-validaion_rate)), traces_per_key), dtype='f4')
+    validation_traces = np.zeros((int(key_num*validaion_rate), traces_per_key), dtype='f4')
+
+    #train_traces = np.zeros((int(key_num*(1.0-validaion_rate))*16,((length_signal * traces_per_key)//16)), dtype='f4')
+    #validation_traces = np.zeros((int(key_num*validaion_rate)*16,((length_signal * traces_per_key)//16)), dtype='f4')
     with open(traces_file_path, 'rb') as file:
         # collect data of train set
+        points_to_read = length_signal * 8
         ###
         print("processing train trace")
         ###
         for i in range(0, int(key_num*(1.0-validaion_rate))):
-            avarage = np.zeros(recordLen, dtype=np.int16)
-            for k in range(0, traces_per_key):
-                recordNo = i*traces_per_key + k  # the index of a target record in the file
-                # Reading a record recordNo from file into the memArray
-                file.seek(recordSize * recordNo)
-                bytes = file.read(recordSize)
-                memArray = np.frombuffer(bytes, dtype=np.int16).copy()
-                avarage = get_avarage(avarage, memArray, k)
+            for n in range(0,traces_per_key):
 
-            img = avarage[0::2] + 1j * avarage[1::2]
-            data = fft_fuc(img, frequency, length_signal)
-            print("images: ", i)
-            train_traces[i]= data
+                trace_point = i * traces_per_key +n
+                file.seek(trace_point * points_to_read)
+                bytes = file.read(points_to_read)
+                memArray = np.frombuffer(bytes, dtype='<f4').copy()
+                trace = memArray[0::2] + 1j * memArray[1::2]
+                fft_energy = fft(trace)
+                energy = np.square(np.abs(fft_energy))
+                energy_sum = np.sum(energy)
+                train_traces[i][n] = energy_sum
+            # train_traces[i] /= np.max(train_traces[i])
+            print('trace :', i)    #train_traces[i*16+n] = energy
         # collect data of validation set
         ###
         print("processing valid trace")
         ###
         for i in range(int(key_num*(1.0-validaion_rate)), key_num):
-            avarage = np.zeros(recordLen, dtype=np.int16)
-            for k in range(0, traces_per_key):
-                recordNo = i*traces_per_key + k  # the index of a target record in the file
-                # Reading a record recordNo from file into the memArray
-                file.seek(recordSize * recordNo)
-                bytes = file.read(recordSize)
-                memArray = np.frombuffer(bytes, dtype=np.int16).copy()
-                avarage = get_avarage(avarage, memArray, k)
+            for n in range(traces_per_key):
+                trace_point = i * traces_per_key + n
+                file.seek(trace_point * points_to_read)
+                bytes = file.read(points_to_read)
+                memArray = np.frombuffer(bytes, dtype='<f4').copy()
+                trace = memArray[0::2] + 1j * memArray[1::2]
+                fft_energy = fft(trace)
+                energy = np.square(np.abs(fft_energy))
+                energy_sum = np.sum(energy)
+                validation_traces[(i - int(key_num * (1.0 - validaion_rate)))][n] = energy_sum
+            # validation_traces[(i - int(key_num * (1.0 - validaion_rate)))] /= np.max(validation_traces[(i - int(key_num * (1.0 - validaion_rate)))])
+            print('trace :', i)
+                #validation_traces[(i-int(key_num*(1.0-validaion_rate)))*16 + n] = energy
 
-            img = avarage[0::2] + 1j * avarage[1::2]
-            data = fft_fuc(img, frequency, length_signal)
-            print("images: ", i)
-            validation_traces[i-int(key_num*(1.0-validaion_rate))]= data
     file.close()
 
     train_group.create_dataset(name = "trace", data = train_traces, dtype = train_traces.dtype)
     valid_group.create_dataset(name = "trace", data = validation_traces, dtype= validation_traces.dtype)
-# img to nparray
-def get_img_from_fig(fig, dpi=100):
-    buf = io.BytesIO()
-    fig.savefig(buf, format="png", dpi=dpi)
-    buf.seek(0)
-    img_arr = np.frombuffer(buf.getvalue(), dtype=np.uint8)
-    buf.close()
-    img = cv2.imdecode(img_arr, 1)
-    img = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
-
-    return img
-#fft
-def fft_fuc(signal, frequency, length_signal):
-    Fs = frequency
-    T =1/Fs
-    L = length_signal
-    t =np.zeros(L-1)
-    for n in range(L-1):
-        t[n] = n*Fs/L
-    half_t = t[range(int(L/2))]
-    fft_y = fft(signal)
-    fft_y =fftshift(fft_y)
-    abs_y = np.abs(fft_y)
-    normalization_half_y = abs_y[range(int(L / 2))]
-    '''
-    fft_y = np.abs(fft_y)
-    fft_y /= max(fft_y)
-    fft_x = fftfreq(len(fft_fft_y), 1 / len(fft_fft_y))
-    '''
-    fig = plt.figure(figsize=(5.0,5.0))
-    #plt.axis('off')
-    plt.subplots_adjust(top=1, bottom=0, right=1, left=0, hspace=0, wspace=0)
-    plt.margins(0, 0)
-    #plt.plot(fftshift(fft_x), fftshift(fft_y))
-    plt.plot(half_t,normalization_half_y)
-    plot_img_np = get_img_from_fig(fig)
-    plt.close(fig)
-    return plot_img_np
-
 # compute hanmming weight of plaintext and key
 def labelize(plaintext, key):
-    return np.int16(plaintext ^ key)
+    # return np.int16(AES_Sbox(plaintext[:] ^ key[:]))
+    return np.float32(plaintext^key)
 
 if __name__ == "__main__":
     if len(sys.argv)!=2:
-        file_path = 'a_train_1000.raw'
+        file_path = 'aes_1000.raw'
         SAMPLE_RATE = 10000000
         frequency = 80000000
         key_num = 1000
         traces_per_key = 100
-        record_time = 120678
-        key_file_path = "aes_key_1000.txt"
-        validation_rate = 0.3
+        record_time = 120897
+        key_file_path = "aes_key_1000_1.txt"
+        validation_rate = 0.2
     else:
-        file_path = 'a_train_1000.raw'
+        file_path = 'aes_1000.raw'
         SAMPLE_RATE = 10000000
         frequency = 80000000
         key_num = 1000
         traces_per_key = 100
-        record_time = 120678
-        validation_rate = 0.3
+        record_time = 120897
+        validation_rate = 0.2
         #todo : read_parameter
 
     sample_num = key_num * traces_per_key
