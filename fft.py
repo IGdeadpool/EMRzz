@@ -30,7 +30,7 @@ AES_Sbox = np.array([
 			])
 # function to convert recorded AES key
 def convert_plaintext_key(file_path, key_num):
-    try:
+    """try:
         pks = np.loadtxt(file_path, dtype=np.int16, delimiter = ',')
     except:
         print("Error2: can't open txt file for read")
@@ -41,33 +41,55 @@ def convert_plaintext_key(file_path, key_num):
     for n in range(int(len(pks)/2)):
         plaintext[n] = pks[2*n+1]
         aes_key[n] = pks[2*n]
-    return plaintext, aes_key
+    return plaintext, aes_key"""
+    plaintext = np.zeros((key_num, 16), dtype=int)
+    aes_key = np.zeros((key_num, 16), dtype=int)
+    aes_runtime = np.zeros(key_num + 1, dtype=int)
+    total_runtime = np.zeros(key_num + 1, dtype=int)
+    with open(file_path, 'r') as file:
+        lines = file.readlines();
+        count = 0
+        for line in lines:
+            if count % 4 == 0:
+                aes_runtime[count // 4] = int(line) + 4
+            elif count % 4 == 1:
+                total_runtime[count // 4] = int(line)
+            elif count % 4 == 2:
+                plaintext[count // 4] = np.array([int(s) for s in line.split(',')])
+            elif count % 4 == 3:
+                aes_key[count // 4] = np.array([int(s) for s in line.split(',')])
+            count += 1
+    return aes_runtime, total_runtime, aes_key, plaintext
 
 #convert .raw to complex
-def convert_raw_to_dataset(traces_file_path, train_group, valid_group,  key_num, traces_per_key, frequency, length_signal, validaion_rate):
+def convert_raw_to_dataset(traces_file_path, train_group, valid_group,  key_num, sample_per_key, aes_runtime, execTime, window_size, validaion_rate):
 
-    train_traces = np.zeros((int(key_num*(1.0-validaion_rate)), traces_per_key), dtype='f4')
-    validation_traces = np.zeros((int(key_num*validaion_rate), traces_per_key), dtype='f4')
-
-    #train_traces = np.zeros((int(key_num*(1.0-validaion_rate))*16,((length_signal * traces_per_key)//16)), dtype='f4')
-    #validation_traces = np.zeros((int(key_num*validaion_rate)*16,((length_signal * traces_per_key)//16)), dtype='f4')
+    train_traces = np.zeros((int(key_num*(1.0-validaion_rate)), sample_per_key), dtype='f4')
+    validation_traces = np.zeros((int(key_num*validaion_rate), sample_per_key), dtype='f4')
+    points_to_read = window_size*8
+    #train_traces = np.zeros((int(key_num*(1.0-validaion_rate))*16,((length_signal * sample_per_key)//16)), dtype='f4')
+    #validation_traces = np.zeros((int(key_num*validaion_rate)*16,((length_signal * sample_per_key)//16)), dtype='f4')
     with open(traces_file_path, 'rb') as file:
-        # collect data of train set
-        points_to_read = length_signal * 8
-        ###
-        print("processing train trace")
-        ###
-        for i in range(0, int(key_num*(1.0-validaion_rate))):
-            for n in range(0,traces_per_key):
-
-                trace_point = i * traces_per_key +n
-                file.seek(trace_point * points_to_read)
+        for i in range(int(key_num*(1.0-validaion_rate))):
+            seek_execPoint = (np.sum(execTime[:i + 2]) - aes_runtime[i]) * 10 * 8
+            points_per_sample = aes_runtime[i] * 10
+            seek_num = (points_per_sample - window_size) // sample_per_key
+            for n in range(sample_per_key):
+                file.seek(seek_execPoint + (n * seek_num * 8))
+                bytes = file.read(points_to_read)
+                memArray = np.frombuffer(bytes, dtype='<f4').copy()
+                trace = memArray[0::2] + 1j * memArray[1::2]
+                fft_energy = fft(trace)
+                energy = np.square(np.abs(fft_energy).astype('f4'))
+                energy_sum = np.sum(energy)
+                """#trace_point = i * sample_per_key +n
+                #file.seek(trace_point * points_to_read)
                 bytes = file.read(points_to_read)
                 memArray = np.frombuffer(bytes, dtype='<f4').copy()
                 trace = memArray[0::2] + 1j * memArray[1::2]
                 fft_energy = fft(trace)
                 energy = np.square(np.abs(fft_energy))
-                energy_sum = np.sum(energy)
+                energy_sum = np.sum(energy)"""
                 train_traces[i][n] = energy_sum
             # train_traces[i] /= np.max(train_traces[i])
             print('trace :', i)    #train_traces[i*16+n] = energy
@@ -76,14 +98,16 @@ def convert_raw_to_dataset(traces_file_path, train_group, valid_group,  key_num,
         print("processing valid trace")
         ###
         for i in range(int(key_num*(1.0-validaion_rate)), key_num):
-            for n in range(traces_per_key):
-                trace_point = i * traces_per_key + n
-                file.seek(trace_point * points_to_read)
+            seek_execPoint = (np.sum(execTime[:i + 2]) - aes_runtime[i]) * 10 * 8
+            points_per_sample = aes_runtime[i] * 10
+            seek_num = (points_per_sample - window_size) // sample_per_key
+            for n in range(sample_per_key):
+                file.seek(seek_execPoint + (n * seek_num * 8))
                 bytes = file.read(points_to_read)
                 memArray = np.frombuffer(bytes, dtype='<f4').copy()
                 trace = memArray[0::2] + 1j * memArray[1::2]
                 fft_energy = fft(trace)
-                energy = np.square(np.abs(fft_energy))
+                energy = np.square(np.abs(fft_energy).astype('f4'))
                 energy_sum = np.sum(energy)
                 validation_traces[(i - int(key_num * (1.0 - validaion_rate)))][n] = energy_sum
             # validation_traces[(i - int(key_num * (1.0 - validaion_rate)))] /= np.max(validation_traces[(i - int(key_num * (1.0 - validaion_rate)))])
@@ -96,32 +120,35 @@ def convert_raw_to_dataset(traces_file_path, train_group, valid_group,  key_num,
     valid_group.create_dataset(name = "trace", data = validation_traces, dtype= validation_traces.dtype)
 # compute hanmming weight of plaintext and key
 def labelize(plaintext, key):
-    # return np.int16(AES_Sbox(plaintext[:] ^ key[:]))
-    return np.float32(plaintext^key)
+    print(np.float32(AES_Sbox[plaintext[:] ^ key[:]]))
+    return np.float32(AES_Sbox[plaintext[:] ^ key[:]])
+    """sbox = np.zeros(len(plaintext), dtype='f4')
+    for i in range(len(plaintext)):
+        sbox[i] = np.float32(AES_Sbox[plaintext[i]^key[i]])
+    return sbox"""
 
 if __name__ == "__main__":
     if len(sys.argv)!=2:
-        file_path = 'aes_1000.raw'
+        file_path = 'aes_key_100_total_time.raw'
         SAMPLE_RATE = 10000000
         frequency = 80000000
-        key_num = 1000
-        traces_per_key = 100
+        key_num = 100
+        sample_per_key = 100
         record_time = 120897
-        key_file_path = "aes_key_1000_1.txt"
+        key_file_path = "aes_key_100_total_time.txt"
         validation_rate = 0.2
+        window_size = 2048
     else:
         file_path = 'aes_1000.raw'
         SAMPLE_RATE = 10000000
         frequency = 80000000
-        key_num = 1000
-        traces_per_key = 100
+        key_num = 100
+        sample_per_key = 100
         record_time = 120897
         validation_rate = 0.2
         #todo : read_parameter
 
-    sample_num = key_num * traces_per_key
-    plaintext, aes_key = convert_plaintext_key(key_file_path, key_num)
-    length_signal = int(SAMPLE_RATE * record_time/1000) // sample_num
+    aes_runtime, exec_runtime, aes_key, plaintext = convert_plaintext_key(key_file_path, key_num)
 
     saving_path = "AES_key_recover_train.hdf5"
 
@@ -134,7 +161,7 @@ if __name__ == "__main__":
     train_set_group = output_file.create_group("train_set")
     valid_set_group = output_file.create_group("valid_set")
 
-    convert_raw_to_dataset(file_path, train_set_group, valid_set_group, key_num, traces_per_key, frequency, length_signal, validation_rate)
+    convert_raw_to_dataset(file_path, train_set_group, valid_set_group, key_num, sample_per_key, aes_runtime, exec_runtime, window_size,  validation_rate)
     ###
     print("Computing labels")
     ###

@@ -169,10 +169,10 @@ if __name__ == "__main__":
                 output_arr = output.cpu().detach().numpy()
                 accuracy_train += partial_correct_accuracy(y_train_value.cpu().numpy(), batch_size, output_arr)
                 loss_train += loss.data.cpu().numpy()
-                if step % 10 ==9:
+                if step % 4 ==3:
                     print('subkey_order: ', k, 'Epoch: ', epoch, 'Batch: ', step,
-                          '| train loss: %.4f' % (loss_train / batch_size/10),
-                          '|train accuracy: %.4f' % (accuracy_train / batch_size/10),
+                          '| train loss: %.4f' % (loss_train / batch_size/4),
+                          '|train accuracy: %.4f' % (accuracy_train / batch_size/4),
                           '|learning rate: %.6f' % optimizer.param_groups[0]['lr'])
                     accuracy_train = 0.0
                     loss_train = 0.0
@@ -194,8 +194,8 @@ if __name__ == "__main__":
 
                 output_arr = output.cpu().detach().numpy()
                 accuracy_valid += partial_correct_accuracy(y_valid_value.cpu().numpy(), batch_size, output_arr)
-            print('Epoch: ', epoch, '| validation loss: %.4f' % (loss_valid / 200),
-                  '|validatiton accuracy: %.4f' % (accuracy_valid / 200))
+            print('Epoch: ', epoch, '| validation loss: %.4f' % (loss_valid / 20),
+                  '|validatiton accuracy: %.4f' % (accuracy_valid / 20))
 
             scheduler.step()
             torch.cuda.empty_cache()
